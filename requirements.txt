@@ -1,0 +1,4 @@
+markdown>=3.5
+pillow>=10
+# tools/import_medium.py only (one-time Medium import):
+# curl_cffi>=0.7
