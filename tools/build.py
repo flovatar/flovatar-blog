@@ -87,6 +87,43 @@ def url_of(slug):
     return f'{BASE}/{quote(slug)}'
 
 
+def norm(s):
+    """Comparable form of a heading/title: no markdown, punctuation, case or extra spaces."""
+    s = re.sub(r'\{#[^}]*\}\s*$', '', s or '')
+    s = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', s)
+    s = re.sub(r'[^\w\s]', ' ', s.lower())
+    return ' '.join(s.split())
+
+
+def strip_title_headings(p):
+    """Medium repeats the post title/subtitle as the first heading(s) of the body; the page header shows them already.
+    Drop leading body headings (before any other content, section breaks aside) that duplicate them."""
+    dup = {norm(p['title']), norm(p['subtitle'])} - {''}
+    blocks = p['body_md'].split('\n\n')
+    out, leading = [], True
+    for b in blocks:
+        st = b.strip()
+        if leading and st and st != '* * *':
+            m = re.match(r'#{1,6} (.*)$', st)
+            if m and '\n' not in st and norm(m.group(1)) in dup:
+                continue
+            leading = False
+        out.append(b)
+    while out and out[0].strip() in ('', '* * *'):  # no section break right below the header
+        out.pop(0)
+    p['body_md'] = '\n\n'.join(out)
+
+
+def show_subtitle(p):
+    """Header subtitle only when it's a real subtitle: not Medium's truncated first paragraph (…), and not a section
+    heading that also appears in the body."""
+    sub = p['subtitle']
+    if not sub or sub.endswith('…'):
+        return False
+    heads = {norm(h) for h in re.findall(r'^#{1,6} (.*)$', p['body_md'], re.M)}
+    return norm(sub) not in heads
+
+
 def render_md(text):
     md = markdown.Markdown(extensions=['fenced_code', 'sane_lists', 'attr_list'], output_format='html')
     out = md.convert(text)
@@ -261,6 +298,7 @@ def main():
             twins[p['translation_of']] = p['slug']
     default_og(os.path.join(out, 'og', 'blog.jpg'))
     for p in posts:
+        strip_title_headings(p)
         p['html'] = render_md(p['body_md'])
         if p.get('cover'):
             og_image(p['cover'], os.path.join(out, 'og', asset_dir(p['slug']) + '.jpg'))
@@ -308,7 +346,7 @@ def main():
   <header>
     <p class="eyebrow"><a href="/index.html" style="color:inherit;text-decoration:none">{T[lang]["home"]}</a></p>
     <h1>{esc(p["title"])}</h1>
-    {f'<p class="subtitle">{esc(p["subtitle"])}</p>' if p["subtitle"] and not p["subtitle"].endswith('…') else ''}
+    {f'<p class="subtitle">{esc(p["subtitle"])}</p>' if show_subtitle(p) else ''}
     <p class="meta"><time datetime="{p["date"]}">{nice_date(p["dt"], lang)}</time><span>· {p["reading_time"]} {tr["min"]}</span></p>
     {translation}
   </header>
